@@ -15,6 +15,13 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 90
 
+    defaults:
+      run:
+        shell: powershell
+
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,21 +36,38 @@ jobs:
           python-version: "3.10"
 
       - name: Show environment info
-        shell: powershell
         run: |
           conda info
           conda list
           python --version
+          Write-Host "GITHUB_WORKSPACE = $env:GITHUB_WORKSPACE"
+          Write-Host "PYTHONPATH = $env:PYTHONPATH"
+
+      - name: Verify repo structure
+        run: |
+          Write-Host "Current directory:"
+          Get-Location
+          Write-Host "`nTop-level files:"
+          Get-ChildItem -Force
+          Write-Host "`nContents of src:"
+          if (Test-Path src) {
+            Get-ChildItem src -Force
+          } else {
+            Write-Host "src folder not found"
+          }
 
       - name: Verify core imports
-        shell: powershell
         run: |
           python -c "import torch, torchaudio, transformers, soundfile; print('Core imports OK')"
           python -c "import TTS; print('Coqui TTS OK')"
           python -c "from speechbrain.inference.speaker import SpeakerRecognition; print('SpeechBrain OK')"
 
+      - name: Verify src import
+        run: |
+          python -c "import sys; print('\n'.join(sys.path))"
+          python -c "import src; print('src import OK')"
+
       - name: Create required folders
-        shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path data\raw | Out-Null
           New-Item -ItemType Directory -Force -Path data\processed | Out-Null
@@ -51,7 +75,6 @@ jobs:
           New-Item -ItemType Directory -Force -Path models | Out-Null
 
       - name: Generate dummy audio inputs for smoke test
-        shell: powershell
         run: |
           @"
           import os
@@ -62,11 +85,9 @@ jobs:
 
           sr = 16000
 
-          # 8 seconds lecture dummy audio
           t1 = np.linspace(0, 8, sr * 8, endpoint=False)
           lecture = (0.1 * np.sin(2 * np.pi * 220 * t1)).astype(np.float32)
 
-          # 3 seconds student voice dummy audio
           t2 = np.linspace(0, 3, sr * 3, endpoint=False)
           student = (0.1 * np.sin(2 * np.pi * 180 * t2)).astype(np.float32)
 
@@ -79,21 +100,18 @@ jobs:
           python smoke_audio.py
 
       - name: Run unit tests if present
-        shell: powershell
         run: |
           if (Test-Path tests) {
-            pytest -q tests
+            python -m pytest -q tests
           } else {
             Write-Host "No tests folder found. Skipping pytest."
           }
 
       - name: Run full pipeline
-        shell: powershell
         run: |
           python main.py
 
       - name: List generated files
-        shell: powershell
         run: |
           Write-Host "Outputs:"
           if (Test-Path outputs) {
