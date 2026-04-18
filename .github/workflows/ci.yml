@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master", "**"]
+  pull_request:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          activate-environment: speech_understanding
+          environment-file: environment.yml
+          auto-activate-base: false
+          python-version: "3.10"
+
+      - name: Show environment info
+        shell: powershell
+        run: |
+          conda info
+          conda list
+          python --version
+
+      - name: Verify core imports
+        shell: powershell
+        run: |
+          python -c "import torch, torchaudio, transformers, soundfile; print('Core imports OK')"
+          python -c "import TTS; print('Coqui TTS OK')"
+          python -c "from speechbrain.inference.speaker import SpeakerRecognition; print('SpeechBrain OK')"
+
+      - name: Create required folders
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path data\raw | Out-Null
+          New-Item -ItemType Directory -Force -Path data\processed | Out-Null
+          New-Item -ItemType Directory -Force -Path outputs | Out-Null
+          New-Item -ItemType Directory -Force -Path models | Out-Null
+
+      - name: Generate dummy audio inputs for smoke test
+        shell: powershell
+        run: |
+          python - <<'PY'
+          import os
+          import numpy as np
+          import soundfile as sf
+
+          os.makedirs("data/raw", exist_ok=True)
+
+          sr = 16000
+
+          # 8 seconds lecture dummy audio
+          t1 = np.linspace(0, 8, sr * 8, endpoint=False)
+          lecture = 0.1 * np.sin(2 * np.pi * 220 * t1).astype(np.float32)
+
+          # 3 seconds student voice dummy audio
+          t2 = np.linspace(0, 3, sr * 3, endpoint=False)
+          student = 0.1 * np.sin(2 * np.pi * 180 * t2).astype(np.float32)
+
+          sf.write("data/raw/lecture.wav", lecture, sr)
+          sf.write("data/raw/student_voice_ref.wav", student, sr)
+
+          print("Dummy audio files created.")
+          PY
+
+      - name: Run unit tests if present
+        shell: powershell
+        run: |
+          if (Test-Path tests) {
+            pytest -q
+          } else {
+            Write-Host "No tests folder found. Skipping pytest."
+          }
+
+      - name: Run full pipeline
+        shell: powershell
+        run: |
+          python main.py
+
+      - name: List generated files
+        shell: powershell
+        run: |
+          Write-Host "Outputs:"
+          if (Test-Path outputs) { Get-ChildItem outputs -Recurse | Format-Table FullName }
+          Write-Host "Models:"
+          if (Test-Path models) { Get-ChildItem models -Recurse | Format-Table FullName }
+
+      - name: Upload outputs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: speech-understanding-outputs
+          path: |
+            outputs/**
+            models/student_xvector.pt
+            models/speechbrain_spkrec/**
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload logs and intermediate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: speech-understanding-intermediate
+          path: |
+            data/processed/**
+            models/**
+          if-no-files-found: warn
+          retention-days: 7

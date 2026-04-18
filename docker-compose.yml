@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  speech-dashboard:
+    build: .
+    container_name: speech_understanding_dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./:/app
+      - speech_hf_cache:/app/.cache/huggingface
+    environment:
+      - HF_HOME=/app/.cache/huggingface
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
+volumes:
+  speech_hf_cache:
