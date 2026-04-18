@@ -2,9 +2,12 @@ name: CI
 
 on:
   push:
-    branches: ["main", "master", "**"]
+    branches:
+      - "**"
   pull_request:
-    branches: ["main", "master"]
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 jobs:
@@ -50,7 +53,7 @@ jobs:
       - name: Generate dummy audio inputs for smoke test
         shell: powershell
         run: |
-          python - <<'PY'
+          @"
           import os
           import numpy as np
           import soundfile as sf
@@ -61,23 +64,25 @@ jobs:
 
           # 8 seconds lecture dummy audio
           t1 = np.linspace(0, 8, sr * 8, endpoint=False)
-          lecture = 0.1 * np.sin(2 * np.pi * 220 * t1).astype(np.float32)
+          lecture = (0.1 * np.sin(2 * np.pi * 220 * t1)).astype(np.float32)
 
           # 3 seconds student voice dummy audio
           t2 = np.linspace(0, 3, sr * 3, endpoint=False)
-          student = 0.1 * np.sin(2 * np.pi * 180 * t2).astype(np.float32)
+          student = (0.1 * np.sin(2 * np.pi * 180 * t2)).astype(np.float32)
 
           sf.write("data/raw/lecture.wav", lecture, sr)
           sf.write("data/raw/student_voice_ref.wav", student, sr)
 
           print("Dummy audio files created.")
-          PY
+          "@ | Set-Content smoke_audio.py
+
+          python smoke_audio.py
 
       - name: Run unit tests if present
         shell: powershell
         run: |
           if (Test-Path tests) {
-            pytest -q
+            pytest -q tests
           } else {
             Write-Host "No tests folder found. Skipping pytest."
           }
@@ -91,9 +96,14 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Outputs:"
-          if (Test-Path outputs) { Get-ChildItem outputs -Recurse | Format-Table FullName }
+          if (Test-Path outputs) {
+            Get-ChildItem outputs -Recurse | Format-Table FullName
+          }
+
           Write-Host "Models:"
-          if (Test-Path models) { Get-ChildItem models -Recurse | Format-Table FullName }
+          if (Test-Path models) {
+            Get-ChildItem models -Recurse | Format-Table FullName
+          }
 
       - name: Upload outputs artifact
         uses: actions/upload-artifact@v4
