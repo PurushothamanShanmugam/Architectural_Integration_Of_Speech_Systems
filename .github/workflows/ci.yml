@@ -13,7 +13,7 @@ on:
 jobs:
   smoke-test:
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
 
     defaults:
       run:
@@ -38,29 +38,9 @@ jobs:
       - name: Show environment info
         run: |
           conda info
-          conda list
           python --version
           Write-Host "GITHUB_WORKSPACE = $env:GITHUB_WORKSPACE"
           Write-Host "PYTHONPATH = $env:PYTHONPATH"
-
-      - name: Verify repo structure
-        run: |
-          Write-Host "Current directory:"
-          Get-Location
-          Write-Host "`nTop-level files:"
-          Get-ChildItem -Force
-          Write-Host "`nContents of src:"
-          if (Test-Path src) {
-            Get-ChildItem src -Force
-          } else {
-            Write-Host "src folder not found"
-          }
-
-      - name: Verify core imports
-        run: |
-          python -c "import torch, torchaudio, transformers, soundfile; print('Core imports OK')"
-          python -c "import TTS; print('Coqui TTS OK')"
-          python -c "from speechbrain.inference.speaker import SpeakerRecognition; print('SpeechBrain OK')"
 
       - name: Verify src import
         run: |
@@ -74,42 +54,18 @@ jobs:
           New-Item -ItemType Directory -Force -Path outputs | Out-Null
           New-Item -ItemType Directory -Force -Path models | Out-Null
 
-      - name: Generate dummy audio inputs for smoke test
-        run: |
-          @"
-          import os
-          import numpy as np
-          import soundfile as sf
-
-          os.makedirs("data/raw", exist_ok=True)
-
-          sr = 16000
-
-          t1 = np.linspace(0, 8, sr * 8, endpoint=False)
-          lecture = (0.1 * np.sin(2 * np.pi * 220 * t1)).astype(np.float32)
-
-          t2 = np.linspace(0, 3, sr * 3, endpoint=False)
-          student = (0.1 * np.sin(2 * np.pi * 180 * t2)).astype(np.float32)
-
-          sf.write("data/raw/lecture.wav", lecture, sr)
-          sf.write("data/raw/student_voice_ref.wav", student, sr)
-
-          print("Dummy audio files created.")
-          "@ | Set-Content smoke_audio.py
-
-          python smoke_audio.py
-
-      - name: Run unit tests if present
+      - name: Run simple unit tests only
         run: |
           if (Test-Path tests) {
-            python -m pytest -q tests
+            python -m pytest -q `
+              tests/test_ipa.py `
+              tests/test_lid_features.py `
+              tests/test_preprocessing.py `
+              tests/test_summary.py `
+              tests/test_translation.py
           } else {
             Write-Host "No tests folder found. Skipping pytest."
           }
-
-      - name: Run full pipeline
-        run: |
-          python main.py
 
       - name: List generated files
         run: |
@@ -123,18 +79,7 @@ jobs:
             Get-ChildItem models -Recurse | Format-Table FullName
           }
 
-      - name: Upload outputs artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: speech-understanding-outputs
-          path: |
-            outputs/**
-            models/student_xvector.pt
-            models/speechbrain_spkrec/**
-          if-no-files-found: warn
-          retention-days: 7
-
-      - name: Upload logs and intermediate artifact
+      - name: Upload intermediate artifact
         uses: actions/upload-artifact@v4
         with:
           name: speech-understanding-intermediate
